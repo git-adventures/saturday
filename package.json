@@ -1,0 +1,25 @@
+{
+  "name": "sat",
+  "version": "1.0.0",
+  "description": "Terminal AI client — GPT · Claude · Gemini · Groq · Ollama",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.tsx",
+    "dev": "tsx watch src/index.tsx",
+    "setup": "tsx src/index.tsx --setup"
+  },
+  "bin": {
+    "sat": "./sat.js"
+  },
+  "dependencies": {
+    "ink": "^5.1.0",
+    "pdf-parse": "^2.4.5",
+    "react": "^18.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
