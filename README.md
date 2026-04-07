@@ -32,6 +32,7 @@ npm start
 
 - Node.js 18+
 - `pdftotext` for PDF support (`sudo apt install poppler-utils`)
+- `unzip` for DOCX/EPUB support (`sudo apt install unzip`)
 - API key for at least one provider (set up on first run)
 
 ## Providers

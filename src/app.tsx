@@ -128,6 +128,23 @@ function extractRelevantPassages(content: string, query: string, topic = '', max
   return result.length > maxChars ? result.slice(0, maxChars) : result;
 }
 
+// Strip HTML tags and decode common entities to plain text
+function stripHtml(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<\/?(p|div|br|h[1-6]|li|tr|td|th)[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 // Detect how many physical PDF pages precede printed page 1 (front matter offset).
 // Extracts a batch of pages after the TOC section and finds which physical page
 // contains the first chapter's title text.
@@ -231,7 +248,7 @@ export function App({ initialConfig, onRequestSetup, initialModel }: AppProps) {
             '',
             '`/model [name]`        switch provider — gpt · claude · gemini · grok · groq · ollama',
             '`/search on|off|auto`  toggle web search',
-            '`/read <path>`         load a file/PDF as context (ask questions about it)',
+            '`/read <path>`         load a file or document (pdf, docx, epub, html, txt, md…)',
             '`/read <n>.`           load chapter n from PDF table of contents (dot required)',
             '`/read <n>`            pick file n from directory listing',
             '`/read clear`          remove loaded document',
@@ -466,8 +483,52 @@ export function App({ initialConfig, onRequestSetup, initialModel }: AppProps) {
               autoSwitchModel(estTokens, name);
             }
           } else {
-            // Text file
-            const raw = readFileSync(arg, 'utf-8');
+            const ext = name.toLowerCase().split('.').pop() ?? '';
+            let raw = '';
+
+            if (ext === 'docx') {
+              // Word document: unzip word/document.xml and strip XML tags
+              const { execSync } = await import('child_process');
+              try {
+                const xml = execSync(`unzip -p "${arg}" word/document.xml`, { encoding: 'utf-8', maxBuffer: 20 * 1024 * 1024 });
+                raw = xml
+                  .replace(/<w:p[ >]/g, '\n<') // paragraph → newline
+                  .replace(/<[^>]+>/g, '')
+                  .replace(/\n{3,}/g, '\n\n')
+                  .trim();
+              } catch {
+                setError('Could not read .docx — is unzip installed? (sudo apt install unzip)');
+                break;
+              }
+            } else if (ext === 'epub') {
+              // EPUB: zip of HTML files — extract and strip tags
+              const { execSync } = await import('child_process');
+              try {
+                const listing = execSync(`unzip -l "${arg}"`, { encoding: 'utf-8' });
+                const htmlFiles = listing.split('\n')
+                  .map(l => l.trim().split(/\s+/).pop() ?? '')
+                  .filter(f => /\.(html|xhtml|htm)$/i.test(f) && !/toc|nav/i.test(f))
+                  .slice(0, 60);
+                const parts: string[] = [];
+                for (const file of htmlFiles) {
+                  try {
+                    const html = execSync(`unzip -p "${arg}" "${file}"`, { encoding: 'utf-8', maxBuffer: 5 * 1024 * 1024 });
+                    parts.push(stripHtml(html));
+                  } catch {}
+                }
+                raw = parts.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
+                if (!raw) throw new Error('No content extracted');
+              } catch (e: any) {
+                setError(`Could not read .epub — ${e.message}`);
+                break;
+              }
+            } else if (ext === 'html' || ext === 'htm') {
+              raw = stripHtml(readFileSync(arg, 'utf-8'));
+            } else {
+              // Plain text: .txt .md .csv .json .py .ts .js etc.
+              raw = readFileSync(arg, 'utf-8');
+            }
+
             const estTokens = Math.round(raw.length / 4);
             setDocContext({ name, content: raw, mode: 'full' });
             setDirListing(null);
@@ -668,7 +729,7 @@ export function App({ initialConfig, onRequestSetup, initialModel }: AppProps) {
         }
       }
 
-      if (searchOn && text.length < 500) {
+      if (searchOn && !docContext && text.length < 500) {
         try {
           const q = text.length > 150 ? (text.split('\n').find(l => l.trim().length > 10) ?? text).slice(0, 150) : text;
           const results = await webSearch(q, 3, controller.signal);
