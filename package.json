@@ -9,7 +9,7 @@
     "setup": "tsx src/index.tsx --setup"
   },
   "bin": {
-    "satx": "./cli.js"
+    "satx": "./cli"
   },
   "dependencies": {
     "ink": "^5.1.0",
